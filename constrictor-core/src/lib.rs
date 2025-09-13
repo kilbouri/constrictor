@@ -5,3 +5,9 @@ pub mod math {
     pub use direction::*;
     pub use vector2::*;
 }
+
+pub mod models {
+    pub mod snake;
+
+    pub use snake::*;
+}
