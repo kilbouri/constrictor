@@ -1,207 +1,297 @@
+use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::collections::hash_map::Entry;
 
 use crate::math::Direction;
 use crate::math::Vector2;
 
 pub struct Snake {
-    /// The direction the snake is currently facing
-    pub facing: Direction,
+    /// The direction the snake is currently facing.
+    facing: Direction,
+
+    /// The last direction the snake moved. This is important to prevent it
+    /// being possible to make the snake reverse over itself by rotating
+    /// [`Self::facing`] 90 degrees twice.
+    last_move_direction: Direction,
 
     /// The points making up the snake's body.
-    body_points: VecDeque<Vector2>,
+    ///
+    /// # Note
+    /// You should avoid manual manipulation of this field because it can lead
+    /// to divergence from [`Self::body_point_counts`].
+    body: VecDeque<Vector2>,
+
+    /// Map mirroring [`Self::body`] with the number of times a given point is
+    /// covered by the snake. Allows accounting for self-intersection.
+    ///
+    /// # Note
+    /// You should avoid manual manipulation of this field because it can lead
+    /// to divergence from [`Self::body`].
+    body_point_counts: HashMap<Vector2, usize>,
 }
 
 impl Snake {
-    /// Creates a [`Snake`] with `length` length facing `facing` with head located at
-    /// `head_position`. `length` must be at least `2`.
-    pub fn new(head_position: Vector2, length: usize, facing: Direction) -> Self {
-        assert!(
-            length >= 2,
-            "snake length must be at least 2 to have head and tail"
-        );
-
+    /// Creates a [`Snake`] facing `facing` with length 1 with head (and tail)
+    /// located at `head_position`.
+    ///
+    /// # Example
+    /// ```
+    /// use constrictor_core::math::{Direction, Vector2};
+    /// use constrictor_core::models::Snake;
+    ///
+    /// let snek = Snake::new(Vector2 { x: 4, y: 2 }, Direction::Right);
+    /// assert_eq!(snek.facing(), Direction::Right);
+    /// assert_eq!(snek.len(), 1);
+    /// assert_eq!(snek.head(), &Vector2 { x: 4, y: 2 });
+    /// assert_eq!(snek.tail(), &Vector2 { x: 4, y: 2 });
+    /// ```
+    pub fn new(head_position: Vector2, facing: Direction) -> Self {
         let mut snek = Self {
-            body_points: VecDeque::with_capacity(1 + length),
+            body: VecDeque::new(),
+            body_point_counts: HashMap::new(),
+            last_move_direction: facing,
             facing,
         };
 
-        // Insert each of the body positions
-        let mut body_point = head_position;
-        for _ in 0..length {
-            snek.body_points.push_back(body_point);
-            body_point.move_in(facing.flip(), 1);
-        }
+        snek.push_head(head_position);
 
         snek
     }
 
+    /// Gets the direction the [`Snake`] is facing.
+    ///
+    /// # Example
+    /// ```
+    /// use constrictor_core::math::{Direction, Vector2};
+    /// use constrictor_core::models::Snake;
+    ///
+    /// let snek = Snake::new(Vector2 { x: 4, y: 2 }, Direction::Right);
+    /// assert_eq!(snek.facing(), Direction::Right);
+    /// ```
+    pub fn facing(&self) -> Direction {
+        self.facing
+    }
+
     /// Gets the total length of the [`Snake`].
+    ///
+    /// # Example
+    /// ```
+    /// use constrictor_core::math::{Direction, Vector2};
+    /// use constrictor_core::models::Snake;
+    ///
+    /// let mut snek = Snake::new(Vector2 { x: 4, y: 2 }, Direction::Right);
+    /// assert_eq!(snek.len(), 1);
+    ///
+    /// snek.advance(true);
+    /// assert_eq!(snek.len(), 2);
+    /// ```
     pub fn len(&self) -> usize {
-        self.body_points.len()
+        self.body.len()
     }
 
     /// Gets the position of the [`Snake`]'s head.
-    pub fn head(&self) -> Vector2 {
-        self.body_points.front().expect("snake is headless").clone()
+    ///
+    /// # Example
+    /// ```
+    /// use constrictor_core::math::{Direction, Vector2};
+    /// use constrictor_core::models::Snake;
+    ///
+    /// let mut snek = Snake::new(Vector2 { x: 4, y: 2 }, Direction::Right);
+    /// assert_eq!(snek.head(), &Vector2{ x: 4, y: 2 });
+    ///
+    /// snek.advance(true);
+    /// assert_eq!(snek.head(), &Vector2{ x: 5, y: 2 });
+    ///
+    /// snek.advance(false);
+    /// assert_eq!(snek.head(), &Vector2{ x: 6, y: 2 });
+    /// ```
+    pub fn head(&self) -> &Vector2 {
+        self.body.front().expect("snake is headless")
+    }
+
+    /// Returns an [`Iterator`] over the body of the [`Snake`].
+    ///
+    /// # Example
+    /// ```
+    /// use constrictor_core::math::{Direction, Vector2};
+    /// use constrictor_core::models::Snake;
+    ///
+    /// let mut snek = Snake::new(Vector2 { x: 4, y: 2 }, Direction::Right);
+    /// snek.advance(true);
+    ///
+    /// let mut iter = snek.body_iter();
+    /// assert!(matches!(iter.next(), Some(Vector2{ x: 5, y: 2 })));
+    /// assert!(matches!(iter.next(), Some(Vector2{ x: 4, y: 2 })));
+    /// assert!(matches!(iter.next(), None));
+    /// ```
+    pub fn body_iter(&self) -> impl Iterator<Item = &Vector2> {
+        self.body.iter()
     }
 
     /// Gets the position of the [`Snake`]'s tail.
-    pub fn tail(&self) -> Vector2 {
-        self.body_points.back().expect("snake is tailless").clone()
+    ///
+    /// # Example
+    /// ```
+    /// use constrictor_core::math::{Direction, Vector2};
+    /// use constrictor_core::models::Snake;
+    ///
+    /// let mut snek = Snake::new(Vector2 { x: 4, y: 2 }, Direction::Right);
+    /// assert_eq!(snek.tail(), &Vector2{ x: 4, y: 2 });
+    ///
+    /// snek.advance(true);
+    /// assert_eq!(snek.tail(), &Vector2{ x: 4, y: 2 });
+    ///
+    /// snek.advance(false);
+    /// assert_eq!(snek.tail(), &Vector2{ x: 5, y: 2 });
+    /// ```
+    pub fn tail(&self) -> &Vector2 {
+        self.body.back().expect("snake is tailless")
     }
 
-    /// Advances the [`Snake`] by a single step. Each step moves the head in the direction of
-    /// `self.facing` by one and drops drops the tail to maintain length (unless the [`Snake`]
-    /// `consumed_food`).
+    /// Returns whether or not the [`Snake`]'s body contains the provided
+    /// [`Vector2`].
+    ///
+    /// # Example
+    /// ```
+    /// use constrictor_core::math::{Direction, Vector2};
+    /// use constrictor_core::models::Snake;
+    ///
+    /// let mut snek = Snake::new(Vector2 { x: 4, y: 2 }, Direction::Right);
+    /// snek.advance(true);
+    /// snek.advance(true);
+    ///
+    /// assert!(!snek.contains(&Vector2{ x: 7, y: 2 }));
+    /// assert!(snek.contains(&Vector2{ x: 6, y: 2 }));
+    /// assert!(snek.contains(&Vector2{ x: 5, y: 2 }));
+    /// assert!(snek.contains(&Vector2{ x: 4, y: 2 }));
+    /// assert!(!snek.contains(&Vector2{ x: 3, y: 2 }));
+    /// ```
+    pub fn contains(&self, point: &Vector2) -> bool {
+        self.body_point_counts.contains_key(point)
+    }
+
+    /// Speculatively retrieve the [`Self::head`] of the [`Snake`] after the
+    /// next call to [`Self::advance`].
+    ///
+    /// # Example
+    /// ```
+    /// use constrictor_core::math::{Direction, Vector2};
+    /// use constrictor_core::models::Snake;
+    ///
+    /// let mut snek = Snake::new(Vector2 { x: 4, y: 2 }, Direction::Right);
+    ///
+    /// let speculated_head = snek.next_head_position();
+    ///
+    /// snek.advance(false);
+    ///
+    /// assert_eq!(&speculated_head, snek.head());
+    /// ```
+    pub fn next_head_position(&self) -> Vector2 {
+        self.head().neighbour(self.facing, 1)
+    }
+
+    /// Attempt to change the direction the [`Snake`] is moving. The direction
+    /// is not changed and `false` is returned when the new direction would
+    /// cause the [`Snake`] to reverse direction.
+    ///
+    /// The direction change does not take effect until [`Snake::advance`] is
+    /// called. That is, if the [`Snake`] is facing [`Direction::Up`],
+    /// calling `try_set_facing(Direction::Left)` then
+    /// `try_set_facing(Direction::Down)` will still yield `false` for the
+    /// latter.
+    ///
+    /// # Example
+    /// ```
+    /// use constrictor_core::math::{Direction, Vector2};
+    /// use constrictor_core::models::Snake;
+    ///
+    /// let mut snek = Snake::new(Vector2 { x: 4, y: 2 }, Direction::Up);
+    ///
+    /// snek.advance(false);
+    ///
+    /// // Still invalid because the snake moved in the direction it was facing before.
+    /// assert!(!snek.try_set_facing(Direction::Down));
+    ///
+    /// // Valid as it is perpendicular to the direction the snake last moved.
+    /// assert!(snek.try_set_facing(Direction::Right));
+    ///
+    /// // Should remain invalid, as the snake has not actually advanced Right yet.
+    /// assert!(!snek.try_set_facing(Direction::Down));
+    ///
+    /// snek.advance(false);
+    ///
+    /// // Should now become valid, as the snake has advanced Right.
+    /// assert!(snek.try_set_facing(Direction::Down));
+    /// ```
+    pub fn try_set_facing(&mut self, new_direction: Direction) -> bool {
+        if new_direction != self.last_move_direction.flip() {
+            self.facing = new_direction;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Advances the [`Snake`] by a single step. Each step moves the head in the
+    /// direction of `self.facing` by one and drops the tail to  maintain length
+    /// (unless the [`Snake`] `consumed_food`).
+    ///
+    /// # Example
+    /// ```
+    /// use constrictor_core::math::{Direction, Vector2};
+    /// use constrictor_core::models::Snake;
+    ///
+    /// let mut snek = Snake::new(Vector2 { x: 4, y: 2 }, Direction::Right);
+    ///
+    /// snek.advance(false);
+    /// assert_eq!(snek.len(), 1);
+    /// assert_eq!(snek.head(), &Vector2 { x: 5, y: 2 });
+    /// assert_eq!(snek.tail(), &Vector2 { x: 5, y: 2 });
+    ///
+    /// snek.advance(true);
+    /// assert_eq!(snek.len(), 2);
+    /// assert_eq!(snek.head(), &Vector2 { x: 6, y: 2 });
+    /// assert_eq!(snek.tail(), &Vector2 { x: 5, y: 2 });
+    /// ```
     pub fn advance(&mut self, consumed_food: bool) {
         // Though it should never be valid, do this first in case len() == 1
-        let new_head = self.head().neighbour(self.facing, 1);
+        let new_head = self.next_head_position();
 
-        // Dropping the tail first ensures we can avoid pointless deque growth
+        // Dropping the tail first ensures we can avoid pointless collection growth
         if !consumed_food {
-            self.body_points.pop_back();
+            _ = self.pop_tail();
         }
 
-        self.body_points.push_front(new_head);
+        self.push_head(new_head);
+        self.last_move_direction = self.facing
     }
 
-    /// Shifts the [`Snake`] by a given `offset`.
-    pub fn shift(&mut self, offset: Vector2) {
-        for point in self.body_points.iter_mut() {
-            *point += offset;
+    /// Push a new head onto the snake.
+    ///
+    /// # Note
+    /// You should avoid manual manipulation of [`Self::body`] and
+    /// [`Self::body_point_counts`] because it can lead to the two diverging.
+    fn push_head(&mut self, head: Vector2) {
+        self.body.push_front(head);
+        *self.body_point_counts.entry(head).or_insert(0) += 1;
+    }
+
+    /// Pop the tail from the snake.
+    ///
+    /// # Note
+    /// You should avoid manual manipulation of [`Self::body`] and
+    /// [`Self::body_point_counts`] because it can lead to the two diverging.
+    fn pop_tail(&mut self) -> Option<Vector2> {
+        let old_tail = self.body.pop_back()?;
+
+        match self.body_point_counts.entry(old_tail) {
+            Entry::Occupied(entry) if (*entry.get() <= 1) => _ = entry.remove_entry(),
+            Entry::Occupied(mut entry) => *entry.get_mut() -= 1,
+            Entry::Vacant(_) => {
+                unreachable!("Snake::body and Snake::body_point_counts have diverged!",)
+            }
         }
-    }
 
-    /// Gets the top-left and bottom-right corners of the smallest bounding box the [`Snake`]
-    /// can fit within.
-    pub fn bounds(&self) -> (Vector2, Vector2) {
-        let top_left = self
-            .body_points
-            .iter()
-            .copied()
-            .reduce(|acc, point| Vector2 {
-                x: acc.x.min(point.x),
-                y: acc.y.max(point.y),
-            })
-            .expect("snake has no body points");
-
-        let bottom_right = self
-            .body_points
-            .iter()
-            .copied()
-            .reduce(|acc, point| Vector2 {
-                x: acc.x.max(point.x),
-                y: acc.y.min(point.y),
-            })
-            .expect("snake has no body points");
-
-        (top_left, bottom_right)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{
-        math::{Direction, Vector2},
-        models::Snake,
-    };
-
-    #[test]
-    fn new_snake_has_head_and_body() {
-        let snek = Snake::new(Vector2::default(), 2, Direction::Up);
-
-        assert_eq!(snek.len(), 2);
-        assert_eq!(snek.head(), Vector2 { x: 0, y: 0 });
-        assert_eq!(snek.tail(), Vector2 { x: 0, y: -1 });
-
-        let snek2 = Snake::new(Vector2 { x: 5, y: 5 }, 5, Direction::Left);
-        assert_eq!(snek2.len(), 5);
-        assert_eq!(snek2.head(), Vector2 { x: 5, y: 5 });
-        assert_eq!(snek2.tail(), Vector2 { x: 9, y: 5 });
-    }
-
-    #[test]
-    fn new_snake_has_contiguous_body_points() {
-        let snek = Snake::new(Vector2::default(), 30, Direction::Right);
-        let mut pair_iter = snek.body_points.iter().skip(1).zip(snek.body_points.iter());
-
-        assert!(pair_iter.all(|(&a, &b)| {
-            let diff = a - b;
-            let dx = diff.x.abs();
-            let dy = diff.y.abs();
-
-            (dx <= 1) && (dy <= 1) && (dx ^ dy == 1)
-        }));
-    }
-
-    #[test]
-    fn snake_can_move_forward() {
-        let mut snek = Snake::new(Vector2::default(), 3, Direction::Up);
-
-        snek.advance(false);
-
-        assert_eq!(
-            snek.body_points,
-            vec![
-                Vector2 { x: 0, y: 1 },
-                Vector2 { x: 0, y: 0 },
-                Vector2 { x: 0, y: -1 }
-            ]
-        );
-    }
-
-    #[test]
-    fn snake_can_move_around_corners() {
-        let mut snek = Snake::new(Vector2::default(), 3, Direction::Up);
-
-        // Corner move check
-        snek.facing = Direction::Right;
-        snek.advance(false);
-
-        assert_eq!(
-            snek.body_points,
-            vec![
-                Vector2 { x: 1, y: 0 },
-                Vector2 { x: 0, y: 0 },
-                Vector2 { x: 0, y: -1 }
-            ]
-        );
-    }
-
-    #[test]
-    fn shift_works() {
-        let mut snek = Snake::new(Vector2::default(), 3, Direction::Right);
-        snek.shift(Vector2 { x: 10, y: -10 });
-        assert_eq!(
-            snek.body_points,
-            vec![
-                Vector2 { x: 10, y: -10 },
-                Vector2 { x: 9, y: -10 },
-                Vector2 { x: 8, y: -10 }
-            ]
-        )
-    }
-
-    #[test]
-    fn bounds_works() {
-        let mut snek = Snake::new(Vector2::default(), 4, Direction::Up);
-        snek.facing = Direction::Right;
-        snek.advance(false);
-        snek.advance(false);
-
-        assert_eq!(
-            snek.bounds(),
-            (Vector2 { x: 0, y: 0 }, Vector2 { x: 2, y: -1 })
-        );
-
-        snek = Snake::new(Vector2::default(), 4, Direction::Down);
-        snek.facing = Direction::Left;
-        snek.advance(false);
-        snek.advance(false);
-
-        assert_eq!(
-            snek.bounds(),
-            (Vector2 { x: -2, y: 1 }, Vector2 { x: 0, y: 0 })
-        )
+        Some(old_tail)
     }
 }
