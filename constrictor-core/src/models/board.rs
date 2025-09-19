@@ -117,7 +117,6 @@ impl Board {
 
         self.cell_iter()
             .filter(|cell| !is_taken(cell))
-            .skip(target_cell)
-            .next()
+            .nth(target_cell)
     }
 }

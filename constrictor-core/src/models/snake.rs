@@ -89,6 +89,22 @@ impl Snake {
         self.body.len()
     }
 
+    /// Returns `true` if the [`Snake`] has no body. Note that this always
+    /// returns `true` if [`Snake::new`] is used, as that constructor
+    /// ensures at least one body segment.
+    ///
+    /// # Example
+    /// ```
+    /// use constrictor_core::math::{Direction, Vector2};
+    /// use constrictor_core::models::Snake;
+    ///
+    /// let snek = Snake::new(Vector2 {x: 4, y: 2 }, Direction::Right);
+    /// assert!(!snek.is_empty());
+    /// ```
+    pub fn is_empty(&self) -> bool {
+        self.body.is_empty()
+    }
+
     /// Gets the position of the [`Snake`]'s head.
     ///
     /// # Example
@@ -109,7 +125,8 @@ impl Snake {
         self.body.front().expect("snake is headless")
     }
 
-    /// Returns an [`Iterator`] over the body of the [`Snake`].
+    /// Returns an [`Iterator`] over the body of the [`Snake`], from head to
+    /// tail.
     ///
     /// # Example
     /// ```

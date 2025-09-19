@@ -17,19 +17,19 @@ impl<T: Add<Output = T> + Sub<Output = T>> Vector2<T> {
     ///
     /// let a = Vector2::default();
     ///
-    /// assert_eq!(a.neighbour(Direction::Up, 5), Vector2 { x: 0, y: 5 });
-    /// assert_eq!(a.neighbour(Direction::Down, 5), Vector2 { x: 0, y: -5 });
+    /// assert_eq!(a.neighbour(Direction::Up, 5), Vector2 { x: 0, y: -5 });
+    /// assert_eq!(a.neighbour(Direction::Down, 5), Vector2 { x: 0, y: 5 });
     /// assert_eq!(a.neighbour(Direction::Right, 5), Vector2 { x: 5, y: 0 });
     /// assert_eq!(a.neighbour(Direction::Left, 5), Vector2 { x: -5, y: 0 });
     /// ```
     pub fn neighbour(self, direction: Direction, magnitude: T) -> Self {
         match direction {
             Direction::Up => Self {
-                y: self.y + magnitude,
+                y: self.y - magnitude,
                 ..self
             },
             Direction::Down => Self {
-                y: self.y - magnitude,
+                y: self.y + magnitude,
                 ..self
             },
             Direction::Left => Self {
@@ -54,7 +54,7 @@ impl<T: AddAssign + SubAssign> Vector2<T> {
     /// let mut a = Vector2 { x: 0, y: 0 };
     ///
     /// a.move_in(Direction::Up, 5);
-    /// assert_eq!(a, Vector2 { x: 0, y: 5 });
+    /// assert_eq!(a, Vector2 { x: 0, y: -5 });
     ///
     /// a.move_in(Direction::Down, 5);
     /// assert_eq!(a, Vector2 { x: 0, y: 0 });
@@ -67,8 +67,8 @@ impl<T: AddAssign + SubAssign> Vector2<T> {
     /// ```
     pub fn move_in(&mut self, direction: Direction, magnitude: T) {
         match direction {
-            Direction::Up => self.y += magnitude,
-            Direction::Down => self.y -= magnitude,
+            Direction::Up => self.y -= magnitude,
+            Direction::Down => self.y += magnitude,
             Direction::Left => self.x -= magnitude,
             Direction::Right => self.x += magnitude,
         }
