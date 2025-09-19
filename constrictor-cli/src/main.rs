@@ -1,6 +1,6 @@
-mod drop_hook;
 mod io;
 mod rendering;
+mod scope_guard;
 
 use constrictor_core::{
     math::{Direction, Vector2},
@@ -18,7 +18,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{drop_hook::ScopeGuard, rendering::Renderable};
+use crate::{rendering::Renderable, scope_guard::ScopeGuard};
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Try and be a polite neighbour to the user. We're about to mess with their
